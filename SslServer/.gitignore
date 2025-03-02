@@ -1,0 +1,4 @@
+﻿appsettings.json
+appsettings.*.json
+
+*.pfx
