@@ -1,12 +1,8 @@
 ﻿namespace SslServer.Data
 {
-    using Microsoft.Data.SqlClient;
     using System.Data;
     using System.Threading.Tasks;
 
-    /// <summary>
-    /// Interface for database operations
-    /// </summary>
     public interface IDbService
     {
         /// <summary>
