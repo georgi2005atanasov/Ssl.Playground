@@ -93,7 +93,7 @@
                 {
                     // We found a complete JSON object
                     string jsonMessage = content.Substring(startPos, endPos - startPos + 1);
-                    Console.WriteLine($"Found complete JSON message: {jsonMessage.Substring(0, Math.Min(50, jsonMessage.Length))}...");
+                    Console.WriteLine(jsonMessage.Substring(0, Math.Min(50, jsonMessage.Length)));
 
                     try
                     {

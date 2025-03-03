@@ -1,23 +1,25 @@
-﻿namespace SslServer.Services
-{
-    using NetCoreServer;
-    using Shared.Enums;
-    using Shared;
-    using SslServer.Utils;
-    using System.Text.Json;
-    using SslServer.Contracts;
-    using SslServer.Data;
+﻿using System.Text.Json;
+using NetCoreServer;
+using Shared;
+using Shared.Enums;
+using SslServer.Contracts;
+using SslServer.Data;
+using SslServer.Utils;
 
-    public class VersionManager : IVersionManager
+namespace SslServer.Services
+{
+    public class VersionManager : IVersionManager, IDisposable
     {
         private static string _currentVersion = string.Empty;
         private FileCache? _cache = new FileCache();
         private Action<string>? _notificationCallback;
         private readonly IDbService _dbService;
+        private FileSystemWatcher? _watcher;
+        private readonly Dictionary<string, CancellationTokenSource> _debounceTokens = new Dictionary<string, CancellationTokenSource>(StringComparer.OrdinalIgnoreCase);
 
         public VersionManager(IDbService dbService)
         {
-            this._dbService = dbService;
+            _dbService = dbService;
         }
 
         public string GetCurrentVersion() => _currentVersion;
@@ -38,7 +40,7 @@
 
         private void SetupFileSystemWatcher(string versionsPath)
         {
-            var watcher = new FileSystemWatcher
+            _watcher = new FileSystemWatcher
             {
                 Path = versionsPath,
                 NotifyFilter = NotifyFilters.DirectoryName,
@@ -47,38 +49,54 @@
                 EnableRaisingEvents = true
             };
 
-            // Handle new directories
-            watcher.Created += async (sender, e) =>
+            // Use the debounce method for Created and Renamed events.
+            _watcher.Created += async (sender, e) => await DebounceAndHandleFolder(e.FullPath, e.Name!);
+            _watcher.Renamed += async (sender, e) => await DebounceAndHandleFolder(e.FullPath, e.Name!);
+        }
+
+        private async Task DebounceAndHandleFolder(string folderPath, string folderName)
+        {
+            // Cancel any previous pending processing for this folder.
+            if (_debounceTokens.TryGetValue(folderPath, out var existingCts))
             {
-                try
+                existingCts.Cancel();
+                existingCts.Dispose();
+            }
+
+            // Create a new cancellation token for the debounce.
+            var cts = new CancellationTokenSource();
+            _debounceTokens[folderPath] = cts;
+            try
+            {
+                // Wait 5 seconds to allow the folder copy to complete.
+                await Task.Delay(5000, cts.Token);
+                if (Directory.Exists(folderPath))
                 {
-                    if (Directory.Exists(e.FullPath))
-                    {
-                        Console.WriteLine($"New version folder detected: {e.Name}");
-                        await UpdateVersionCacheAsync(e.FullPath, e.Name ?? "New Version");
-                    }
+                    Console.WriteLine($"New version folder detected: {folderName}");
+                    await UpdateVersionCacheAsync(folderPath, string.IsNullOrEmpty(folderName) ? "New Version" : folderName);
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error handling new version: {ex.Message}");
-                }
-            };
+            }
+            catch (TaskCanceledException)
+            {
+                // A new event has reset the timer.
+            }
+            finally
+            {
+                _debounceTokens.Remove(folderPath);
+                cts.Dispose();
+            }
         }
 
         private void LoadExistingVersion(string versionsPath)
         {
-            var existingVersions = new DirectoryInfo(versionsPath)
-                .GetDirectories();
+            var existingVersions = new DirectoryInfo(versionsPath).GetDirectories();
 
             if (existingVersions.Length > 0)
             {
-                var latestVersion = existingVersions
-                    .OrderBy(f => f.LastWriteTime)
-                    .Last();
-
-                string versionName = Path.GetFileName(latestVersion.FullName);
+                // Use CreationTime to find the newest folder.
+                var latestVersion = existingVersions.OrderBy(f => f.CreationTime).Last();
+                string versionName = latestVersion.Name;
                 Console.WriteLine($"Loading latest version: {versionName}");
-                // Use Task.Run to avoid blocking since we're in a synchronous method
                 Task.Run(() => UpdateVersionCacheAsync(latestVersion.FullName, versionName)).Wait();
             }
             else
@@ -91,28 +109,28 @@
         {
             try
             {
-                // Remove previous version if it exists
+                // Remove previous version if it exists.
                 if (!string.IsNullOrEmpty(_currentVersion))
                 {
                     Console.WriteLine($"Removing previous version: {_currentVersion}");
-                    _cache!.RemovePath(_currentVersion); // Use the version name, not the path
+                    _cache!.RemovePath(_currentVersion);
                 }
 
                 _currentVersion = versionName;
 
-                // Save the version in the database
+                // Save the version in the database.
                 await _dbService.SaveVersionAsync(versionName, DateTime.UtcNow);
 
-                // Process and save all files in the version directory
+                // Process and save all files in the version directory.
                 await ProcessVersionFilesAsync(versionPath, versionName);
 
-                // Cache handler
+                // Cache handler.
                 FileCache.InsertHandler customHandler = (cache, key, value, timeout) =>
                 {
                     return cache.Add(key, value, timeout);
                 };
 
-                // Insert the version path
+                // Insert the version path.
                 bool success = _cache!.InsertPath(
                     path: versionPath,
                     prefix: $"/version/{versionName}",
@@ -121,18 +139,16 @@
                     handler: customHandler
                 );
 
-                if (_notificationCallback != null)
+                // Notify using callback.
+                _notificationCallback?.Invoke(JsonSerializer.Serialize(new BaseMessage
                 {
-                    _notificationCallback(JsonSerializer.Serialize(new BaseMessage
+                    Type = MessageType.NewUpdate,
+                    TimeStamp = DateTime.UtcNow,
+                    Data = JsonSerializer.Serialize(new NewVersionMessage
                     {
-                        Type = MessageType.NewUpdate,
-                        TimeStamp = DateTime.UtcNow,
-                        Data = JsonSerializer.Serialize(new NewVersionMessage
-                        {
-                            Version = versionName,
-                        }, JsonHelpers.JsonFormatter)
-                    }, JsonHelpers.JsonFormatter));
-                }
+                        Version = versionName,
+                    }, JsonHelpers.JsonFormatter)
+                }, JsonHelpers.JsonFormatter));
             }
             catch (Exception ex)
             {
@@ -180,14 +196,10 @@
             }
         }
 
-        /// <summary>
-        /// Validates a file against its stored hash in the database
-        /// </summary>
         public async Task<bool> ValidateFileHash(string filePath, string versionName)
         {
             try
             {
-                // Get the file record from the database
                 var fileRecord = await _dbService.GetFileAsync(filePath, versionName);
                 if (fileRecord == null)
                 {
@@ -195,7 +207,6 @@
                     return false;
                 }
 
-                // Get the full path to the file
                 string fullPath = Path.Combine(
                     Directory.GetCurrentDirectory(),
                     "Versions",
@@ -203,9 +214,7 @@
                     filePath.TrimStart('\\', '/')
                 );
 
-                // Validate the file hash
                 bool isValid = FileHashUtility.ValidateFileHash(fullPath, fileRecord.Sha256);
-
                 if (!isValid)
                     Console.WriteLine($"Hash validation failed for {filePath}");
 
@@ -222,6 +231,20 @@
         {
             _cache?.Dispose();
             _cache = null;
+
+            if (_watcher != null)
+            {
+                _watcher.EnableRaisingEvents = false;
+                _watcher.Dispose();
+                _watcher = null;
+            }
+
+            foreach (var cts in _debounceTokens.Values)
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
+            _debounceTokens.Clear();
         }
     }
 }

@@ -7,8 +7,8 @@
 
     class Program
     {
-        public static void Main()
-            => UpdateClient
+        public static async Task Main()
+            => await UpdateClient
                 .WithConfiguration(x =>
                     x.SetBasePath(Directory.GetCurrentDirectory())
                     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)

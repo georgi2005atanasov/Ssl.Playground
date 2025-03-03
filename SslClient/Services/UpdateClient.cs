@@ -6,6 +6,7 @@
     using Newtonsoft.Json.Linq;
     using Shared;
     using Shared.Enums;
+    using SslClient.Extensions;
     using SslClient.Models.Internal;
     using SslClient.Utils;
     using System.Net.Sockets;
@@ -223,6 +224,10 @@
 
                 switch (message.Type)
                 {
+                    case MessageType.NewUpdate:
+                        HandleNewVersion(message);
+                        break;
+
                     case MessageType.VersionInfo:
                         HandleVersionInfo(message);
                         break;
@@ -254,6 +259,32 @@
             }
         }
 
+        private void HandleNewVersion(BaseMessage message)
+        {
+            try
+            {
+                var newVersion = JsonConvert.DeserializeObject<NewVersionMessage>(message.Data);
+
+                Console.WriteLine($"In order to continue using this program, you need to download the latest version available, which is {newVersion?.Version}");
+
+                Console.Write($"Proceed? Yes/No ");
+                var isDownloading = Console.ReadLine();
+
+                if (isDownloading != null && isDownloading.ToLower() == "yes")
+                {
+                    RequestFileManifest(newVersion!.Version);
+                }
+                else
+                {
+                    UpdateClientExtensions.CancellationTokenSource.Cancel();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error handling new version: {ex.Message}");
+            }
+        }
+
         private void HandleVersionInfo(BaseMessage message)
         {
             try
@@ -273,10 +304,7 @@
 
                 if (localVersion != versionInfo.Version)
                 {
-                    Console.WriteLine($"Update available: Local version {localVersion}, Server version {versionInfo.Version}");
-
-                    // Request file manifest for the new version
-                    RequestFileManifest(versionInfo.Version);
+                    RequestFileManifest(localVersion);
                 }
                 else
                 {
@@ -420,13 +448,13 @@
             }
         }
 
-        private void RequestFileManifest(string version)
+        private void RequestFileManifest(string currentVersion)
         {
             try
             {
                 var versionInfo = new VersionInfoMessage
                 {
-                    Version = version
+                    Version = currentVersion
                 };
 
                 var message = new BaseMessage
@@ -439,7 +467,7 @@
                 string messageJson = System.Text.Json.JsonSerializer.Serialize(message, JsonHelpers.JsonFormatter);
                 SendAsync(messageJson);
 
-                Console.WriteLine($"Requested file manifest for version: {version}");
+                Console.WriteLine($"Requested file manifest. Current version {currentVersion}");
             }
             catch (Exception ex)
             {
