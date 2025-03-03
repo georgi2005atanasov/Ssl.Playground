@@ -32,7 +32,7 @@
         /// <summary>
         /// Gets a file record from the database by file path and version
         /// </summary>
-        Task<Data.Models.File?> GetFileAsync(string filePath, string versionName);
+        Task<Data.Models.File?> GetFileOrDefaultAsync(string filePath, string versionName);
 
         /// <summary>
         /// Saves a new version record to the database

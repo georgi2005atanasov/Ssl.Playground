@@ -4,9 +4,6 @@
     using System.IO;
     using System.Security.Cryptography;
 
-    /// <summary>
-    /// Utility class for file operations
-    /// </summary>
     public static class FileHashUtility
     {
         public static string CalculateSha256(string filePath)

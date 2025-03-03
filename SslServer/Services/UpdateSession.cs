@@ -9,10 +9,13 @@
     using System.Net.Sockets;
     using System.Text;
 
+    /// <summary>
+    /// We must skip ex.Message in the catch block. Now, for testing purposes it is being added.
+    /// </summary>
     public class UpdateSession : SslSession
     {
         private readonly IVersionManager _versionManager;
-        private readonly SecureFileTransferService _fileTransferHandler;
+        private readonly SecureFileTransferService _fileTransferService;
         private readonly UpdateServer _updateServer;
         private StringBuilder _jsonBuffer = new StringBuilder();
 
@@ -23,34 +26,32 @@
             : base(server)
         {
             _versionManager = versionManager;
-            _fileTransferHandler = fileTransferHandler;
+            _fileTransferService = fileTransferHandler;
             _updateServer = server;
         }
 
         protected override void OnConnected()
         {
-            Console.WriteLine($"Chat SSL session with Id {Id} connected!");
+            Console.WriteLine($"SSL session with Id {Id} connected!");
         }
 
         protected override void OnHandshaked()
         {
-            Console.WriteLine($"Chat SSL session with Id {Id} handshaked!");
+            Console.WriteLine($"SSL session with Id {Id} handshaked!");
         }
 
         protected override void OnDisconnected()
         {
-            Console.WriteLine($"Chat SSL session with Id {Id} disconnected!");
+            Console.WriteLine($"SSL session with Id {Id} disconnected!");
         }
 
         protected override void OnReceived(byte[] buffer, long offset, long size)
         {
             try
             {
-                // Append new data to the buffer
                 string dataAsString = Encoding.UTF8.GetString(buffer, (int)offset, (int)size);
                 _jsonBuffer.Append(dataAsString);
 
-                // Process any complete messages
                 ProcessBufferedMessages();
             }
             catch (Exception ex)
@@ -93,7 +94,6 @@
                 {
                     // We found a complete JSON object
                     string jsonMessage = content.Substring(startPos, endPos - startPos + 1);
-                    Console.WriteLine(jsonMessage.Substring(0, Math.Min(50, jsonMessage.Length)));
 
                     try
                     {
@@ -125,7 +125,7 @@
 
         protected override void OnError(SocketError error)
         {
-            Console.WriteLine($"Chat SSL session caught an error with code {error}");
+            Console.WriteLine($"SSL session caught an error with code {error}");
         }
 
         private async Task ProcessMessageAsync(string messageJson)
@@ -134,7 +134,7 @@
             {
                 var message = JsonConvert.DeserializeObject<BaseMessage>(messageJson);
 
-                if (message == null /*|| message.Type == MessageType.Terminate*/)
+                if (message == null)
                 {
                     SendError("Invalid message format");
                     return;
@@ -161,8 +161,7 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing message: {ex.Message}");
-                SendError("Error processing message");
+                SendError(string.Format(ErrorsConstants.ErrorProcessingMessage, ex.Message));
             }
         }
 
@@ -195,6 +194,7 @@
             }
         }
 
+
         private async Task CheckVersion(BaseMessage message)
         {
             try
@@ -211,13 +211,15 @@
                 if (string.IsNullOrEmpty(versionInfo!.Version))
                     versionInfo.Version = _versionManager.GetCurrentVersion();
 
-                var (success, responseData) = await _fileTransferHandler.GetFileManifest(versionInfo.Version);
+                var (success, responseData) = await _fileTransferService
+                    .GetFileManifest(versionInfo.Version);
+
                 SendAsync(responseData);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling file manifest request: {ex.Message}");
-                SendError("Error handling file manifest request");
+                Console.WriteLine($"ERROR - {nameof(CheckVersion)}: {ex.Message}");
+                SendError(ErrorsConstants.ErrorHandlingFileManifestRequest);
             }
         }
 
@@ -236,7 +238,7 @@
 
                 Console.WriteLine($"Handling file request for {fileRequest.FilePath} in version {fileRequest.Version}");
 
-                var (success, responseData) = await _fileTransferHandler.HandleFileRequest(
+                var (success, responseData) = await _fileTransferService.HandleFileRequest(
                     fileRequest.Version, fileRequest.FilePath);
 
                 SendAsync(responseData);
@@ -248,14 +250,21 @@
             }
         }
 
+        /// <summary>
+        /// Validates client file - if the file is corrupted or the version is outdated,
+        /// the server will send the new file
+        /// </summary>
+        /// <param name="message"></param>
+        /// <returns></returns>
+        /// TODO: Make sure the file on the corrupted/older files get deleted
         private async Task HandleFileValidationAsync(BaseMessage message)
         {
             try
             {
                 var decryptedData = AesUtils.DecryptString(
                     message.Data,
-                    HexStringToByteArray(_updateServer.ServerConfiguration.Secrets!.EncryptionKey),
-                    HexStringToByteArray(_updateServer.ServerConfiguration.Secrets!.EncryptionIV)
+                    Converters.HexStringToByteArray(_updateServer.ServerConfiguration.Secrets!.EncryptionKey),
+                    Converters.HexStringToByteArray(_updateServer.ServerConfiguration.Secrets!.EncryptionIV)
                 );
 
                 FileValidationClientMessage? validationRequest = JsonConvert
@@ -263,20 +272,18 @@
 
                 if (validationRequest == null)
                 {
-                    SendError("Invalid file validation request format");
+                    SendError(ErrorsConstants.InvalidFileValidationRequestFormat);
                     return;
                 }
 
-                // Handle the validation request using the file transfer handler
-                var (success, responseData) = await _fileTransferHandler.ValidateClientFile(
+                var (success, responseData) = await _fileTransferService.ValidateClientFile(
                     validationRequest.Version, validationRequest.FilePath, validationRequest.ClientHash);
 
                 SendAsync(responseData);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error handling file validation: {ex.Message}");
-                SendError("Error handling file validation");
+                SendError(string.Format(ErrorsConstants.ErrorHandlingFileValidation, ex.Message));
             }
         }
 
@@ -302,22 +309,6 @@
             {
                 Console.WriteLine($"Error sending error message: {ex.Message}");
             }
-        }
-
-        private static byte[] HexStringToByteArray(string hex)
-        {
-            if (hex.StartsWith("0x"))
-                hex = hex.Substring(2);
-
-            if (hex.Length % 2 != 0)
-                throw new ArgumentException("Hex string must have an even number of characters");
-
-            byte[] bytes = new byte[hex.Length / 2];
-            for (int i = 0; i < hex.Length; i += 2)
-            {
-                bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
-            }
-            return bytes;
         }
     }
 }

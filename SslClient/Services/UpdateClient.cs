@@ -79,7 +79,7 @@
         protected override void OnDisconnected()
         {
             _stop = true;
-            Console.WriteLine($"Chat SSL client disconnected a session with Id {Id}");
+            Console.WriteLine($"SSL client disconnected a session with Id {Id}");
             // Wait for a while...
             Thread.Sleep(1000);
 
@@ -189,7 +189,7 @@
 
         protected override void OnError(SocketError error)
         {
-            Console.WriteLine($"Chat SSL client caught an error with code {error}");
+            Console.WriteLine($"SSL client caught an error with code {error}");
         }
 
         public static UpdateClient WithConfiguration(Func<ConfigurationBuilder, ClientConfiguration?> configuration)
@@ -205,8 +205,8 @@
                 _clientConfiguration.Server.IpAddress,
                 _clientConfiguration.Server.Port,
                 DirectoriesConstants.INSTALLED_VERSIONS,
-                HexStringToByteArray(_clientConfiguration.Secrets!.EncryptionKey),
-                HexStringToByteArray(_clientConfiguration.Secrets.EncryptionIV)
+                ClientHelpers.HexStringToByteArray(_clientConfiguration.Secrets!.EncryptionKey),
+                ClientHelpers.HexStringToByteArray(_clientConfiguration.Secrets.EncryptionIV)
             );
 
             return client;
@@ -266,18 +266,14 @@
                 var newVersion = JsonConvert.DeserializeObject<NewVersionMessage>(message.Data);
 
                 Console.WriteLine($"In order to continue using this program, you need to download the latest version available, which is {newVersion?.Version}");
-
                 Console.Write($"Proceed? Yes/No ");
+
                 var isDownloading = Console.ReadLine();
 
                 if (isDownloading != null && isDownloading.ToLower() == "yes")
-                {
                     RequestFileManifest(newVersion!.Version);
-                }
                 else
-                {
                     UpdateClientExtensions.CancellationTokenSource.Cancel();
-                }
             }
             catch (Exception ex)
             {
@@ -292,24 +288,14 @@
                 var versionInfo = JsonConvert.DeserializeObject<VersionInfoMessage>(message.Data);
 
                 if (versionInfo == null)
-                {
-                    Console.WriteLine("Received invalid version info data");
                     return;
-                }
 
-                Console.WriteLine($"Server version: {versionInfo.Version}");
-
-                // Compare with local version and decide if update is needed
                 string localVersion = ClientHelpers.GetCurrentVersion().CurrentVersion;
 
                 if (localVersion != versionInfo.Version)
-                {
                     RequestFileManifest(localVersion);
-                }
                 else
-                {
                     Console.WriteLine("Client is up to date");
-                }
             }
             catch (Exception ex)
             {
@@ -317,32 +303,31 @@
             }
         }
 
+        /// <summary>
+        /// The manifest't purpose is to trigger download for the corrupted files
+        /// If the client's file hash is different from the server one, a download will be triggered
+        /// </summary>
+        /// <param name="message"></param>
+        /// <returns></returns>
         private async Task HandleFileManifestAsync(BaseMessage message)
         {
             try
             {
                 var fileManifest = JsonConvert.DeserializeObject<FileManifestMessage>(message.Data);
 
-                if (fileManifest == null || fileManifest.Files == null || fileManifest.Files.Count == 0)
-                {
-                    Console.WriteLine("Received empty or invalid file manifest");
+                if (fileManifest == null || 
+                    fileManifest.Files == null || 
+                    fileManifest.Files.Count == 0)
                     return;
-                }
 
-                Console.WriteLine($"Received file manifest for version {fileManifest.Version} with {fileManifest.Files.Count} files");
-
-                // Process each file in the manifest
                 foreach (var file in fileManifest.Files)
                 {
-                    Console.WriteLine($"Processing file: {file.FilePath}");
-
-                    // Check if file already exists and has correct hash
                     string fullPath = Path.Combine(_installationDirectory, file.FilePath);
                     bool needsDownload = true;
 
                     if (File.Exists(fullPath))
                     {
-                        string localHash = await CalculateFileHashAsync(fullPath);
+                        string localHash = await ClientHelpers.CalculateFileHashAsync(fullPath);
 
                         // Validate the file with the server
                         await ValidateFileWithServerAsync(fileManifest.Version, file.FilePath, localHash);
@@ -353,10 +338,7 @@
                     }
 
                     if (needsDownload)
-                    {
-                        // Request the file from server
                         RequestFile(fileManifest.Version, file.FilePath);
-                    }
                 }
             }
             catch (Exception ex)
@@ -385,11 +367,8 @@
 
                 byte[] fileBytes = Convert.FromBase64String(fileResponse.FileContent);
                 await File.WriteAllBytesAsync(fullPath, fileBytes);
+                string fileHash = await ClientHelpers.CalculateFileHashAsync(fullPath);
 
-                Console.WriteLine($"File saved: {fullPath}");
-
-                // Validate the installed file
-                string fileHash = await CalculateFileHashAsync(fullPath);
                 await ValidateFileWithServerAsync(fileResponse.Version, fileResponse.FilePath, fileHash);
             }
             catch (Exception ex)
@@ -448,26 +427,30 @@
             }
         }
 
-        private void RequestFileManifest(string currentVersion)
+        /// <summary>
+        /// I know, message type is VersionInfo... when the server receives the version
+        /// he will make the decision - if it is not the latest version, a request for download
+        /// will be triggered - if not, then the client is up-to date
+        /// </summary>
+        /// <param name="version"></param>
+        private void RequestFileManifest(string version)
         {
             try
             {
-                var versionInfo = new VersionInfoMessage
+                var currentVersionInfo = new VersionInfoMessage
                 {
-                    Version = currentVersion
+                    Version = version
                 };
 
                 var message = new BaseMessage
                 {
-                    TimeStamp = DateTime.UtcNow,
                     Type = MessageType.VersionInfo,
-                    Data = System.Text.Json.JsonSerializer.Serialize(versionInfo, JsonHelpers.JsonFormatter)
+                    TimeStamp = DateTime.UtcNow,
+                    Data = System.Text.Json.JsonSerializer.Serialize(currentVersionInfo, JsonHelpers.JsonFormatter)
                 };
 
                 string messageJson = System.Text.Json.JsonSerializer.Serialize(message, JsonHelpers.JsonFormatter);
                 SendAsync(messageJson);
-
-                Console.WriteLine($"Requested file manifest. Current version {currentVersion}");
             }
             catch (Exception ex)
             {
@@ -494,8 +477,6 @@
 
                 string messageJson = System.Text.Json.JsonSerializer.Serialize(message, JsonHelpers.JsonFormatter);
                 SendAsync(messageJson);
-
-                Console.WriteLine($"Requested file: {filePath}, version: {version}");
             }
             catch (Exception ex)
             {
@@ -503,13 +484,13 @@
             }
         }
 
-        private async Task ValidateFileWithServerAsync(string version, string filePath, string hash)
+        private async Task ValidateFileWithServerAsync(string latestVersion, string filePath, string hash)
         {
             try
             {
                 var validationRequest = new FileValidationClientMessage
                 {
-                    Version = version,
+                    Version = latestVersion,
                     FilePath = filePath,
                     ClientHash = hash
                 };
@@ -523,8 +504,6 @@
 
                 string messageJson = JsonConvert.SerializeObject(message);
                 SendAsync(Encoding.UTF8.GetBytes(messageJson));
-
-                Console.WriteLine($"Sent validation request for file: {filePath}, hash: {hash}");
             }
             catch (Exception ex)
             {
@@ -533,37 +512,6 @@
 
             // Give a small delay to let server respond
             await Task.Delay(100);
-        }
-
-        private async Task<string> CalculateFileHashAsync(string filePath)
-        {
-            using SHA256 sha256 = SHA256.Create();
-            using FileStream stream = File.OpenRead(filePath);
-
-            byte[] hashBytes = await sha256.ComputeHashAsync(stream);
-            return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-        }
-
-        private static byte[] HexStringToByteArray(string hex)
-        {
-            if (hex.StartsWith("0x"))
-                hex = hex.Substring(2);
-
-            if (hex.Length % 2 != 0)
-                throw new ArgumentException("Hex string must have an even number of characters");
-
-            byte[] bytes = new byte[hex.Length / 2];
-            for (int i = 0; i < hex.Length; i += 2)
-            {
-                bytes[i / 2] = Convert.ToByte(hex.Substring(i, 2), 16);
-            }
-            return bytes;
-        }
-
-        // Helper method to convert byte array to hex string
-        private static string ByteArrayToHexString(byte[] bytes)
-        {
-            return BitConverter.ToString(bytes).Replace("-", "");
         }
     }
 }

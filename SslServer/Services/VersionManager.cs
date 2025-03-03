@@ -32,7 +32,6 @@ namespace SslServer.Services
         public void TrackVersions()
         {
             string versionsPath = Path.Combine(Directory.GetCurrentDirectory(), DirectoriesConstants.VERSIONS);
-            Console.WriteLine($"Monitoring folder: {versionsPath}");
 
             SetupFileSystemWatcher(versionsPath);
             LoadExistingVersion(versionsPath);
@@ -49,7 +48,6 @@ namespace SslServer.Services
                 EnableRaisingEvents = true
             };
 
-            // Use the debounce method for Created and Renamed events.
             _watcher.Created += async (sender, e) => await DebounceAndHandleFolder(e.FullPath, e.Name!);
             _watcher.Renamed += async (sender, e) => await DebounceAndHandleFolder(e.FullPath, e.Name!);
         }
@@ -70,11 +68,9 @@ namespace SslServer.Services
             {
                 // Wait 5 seconds to allow the folder copy to complete.
                 await Task.Delay(5000, cts.Token);
+
                 if (Directory.Exists(folderPath))
-                {
-                    Console.WriteLine($"New version folder detected: {folderName}");
                     await UpdateVersionCacheAsync(folderPath, string.IsNullOrEmpty(folderName) ? "New Version" : folderName);
-                }
             }
             catch (TaskCanceledException)
             {
@@ -94,9 +90,11 @@ namespace SslServer.Services
             if (existingVersions.Length > 0)
             {
                 // Use CreationTime to find the newest folder.
-                var latestVersion = existingVersions.OrderBy(f => f.CreationTime).Last();
+                var latestVersion = existingVersions
+                    .OrderBy(f => f.CreationTime)
+                    .Last();
+
                 string versionName = latestVersion.Name;
-                Console.WriteLine($"Loading latest version: {versionName}");
                 Task.Run(() => UpdateVersionCacheAsync(latestVersion.FullName, versionName)).Wait();
             }
             else
@@ -109,28 +107,21 @@ namespace SslServer.Services
         {
             try
             {
-                // Remove previous version if it exists.
                 if (!string.IsNullOrEmpty(_currentVersion))
                 {
-                    Console.WriteLine($"Removing previous version: {_currentVersion}");
                     _cache!.RemovePath(_currentVersion);
                 }
 
                 _currentVersion = versionName;
 
-                // Save the version in the database.
                 await _dbService.SaveVersionAsync(versionName, DateTime.UtcNow);
-
-                // Process and save all files in the version directory.
                 await ProcessVersionFilesAsync(versionPath, versionName);
 
-                // Cache handler.
                 FileCache.InsertHandler customHandler = (cache, key, value, timeout) =>
                 {
                     return cache.Add(key, value, timeout);
                 };
 
-                // Insert the version path.
                 bool success = _cache!.InsertPath(
                     path: versionPath,
                     prefix: $"/version/{versionName}",
@@ -139,7 +130,6 @@ namespace SslServer.Services
                     handler: customHandler
                 );
 
-                // Notify using callback.
                 _notificationCallback?.Invoke(JsonSerializer.Serialize(new BaseMessage
                 {
                     Type = MessageType.NewUpdate,
@@ -161,7 +151,6 @@ namespace SslServer.Services
             try
             {
                 var files = Directory.GetFiles(versionPath, "*.*", SearchOption.AllDirectories);
-                Console.WriteLine($"Processing {files.Length} files in version {versionName}");
 
                 foreach (var filePath in files)
                 {
@@ -182,7 +171,6 @@ namespace SslServer.Services
                         };
 
                         await _dbService.SaveFileAsync(fileRecord, versionName);
-                        Console.WriteLine($"File {relativePath} saved to database with hash {sha256}");
                     }
                     catch (Exception ex)
                     {
@@ -200,12 +188,10 @@ namespace SslServer.Services
         {
             try
             {
-                var fileRecord = await _dbService.GetFileAsync(filePath, versionName);
+                var fileRecord = await _dbService.GetFileOrDefaultAsync(filePath, versionName);
+
                 if (fileRecord == null)
-                {
-                    Console.WriteLine($"File {filePath} not found in database for version {versionName}");
                     return false;
-                }
 
                 string fullPath = Path.Combine(
                     Directory.GetCurrentDirectory(),
@@ -215,8 +201,6 @@ namespace SslServer.Services
                 );
 
                 bool isValid = FileHashUtility.ValidateFileHash(fullPath, fileRecord.Sha256);
-                if (!isValid)
-                    Console.WriteLine($"Hash validation failed for {filePath}");
 
                 return isValid;
             }

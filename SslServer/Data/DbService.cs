@@ -88,7 +88,7 @@
                 await ExecuteNonQueryAsync(sql, CommandType.Text, parameters);
             }
 
-            public async Task<Models.File?> GetFileAsync(string filePath, string versionName)
+            public async Task<Models.File?> GetFileOrDefaultAsync(string filePath, string versionName)
             {
                 const string sql = @"
                 SELECT FileName, FilePath, Sha256, FileSize, UploadedOn

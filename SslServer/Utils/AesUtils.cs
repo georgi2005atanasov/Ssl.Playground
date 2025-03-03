@@ -5,13 +5,6 @@
 
     public static class AesUtils
     {
-        /// <summary>
-        /// Encrypts a string using AES encryption
-        /// </summary>
-        /// <param name="plainText">The string to encrypt</param>
-        /// <param name="key">The encryption key (32 bytes for AES-256)</param>
-        /// <param name="iv">The initialization vector (16 bytes)</param>
-        /// <returns>Base64 encoded encrypted string</returns>
         public static string EncryptString(string plainText, byte[] key, byte[] iv)
         {
             if (string.IsNullOrEmpty(plainText))
@@ -20,17 +13,9 @@
             byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
             byte[] encryptedBytes = EncryptBytes(plainBytes, key, iv);
 
-            // Convert to base64 for easy transmission as string
             return Convert.ToBase64String(encryptedBytes);
         }
 
-        /// <summary>
-        /// Decrypts a string that was encrypted with AES
-        /// </summary>
-        /// <param name="encryptedText">Base64 encoded encrypted string</param>
-        /// <param name="key">The encryption key (32 bytes for AES-256)</param>
-        /// <param name="iv">The initialization vector (16 bytes)</param>
-        /// <returns>The decrypted string</returns>
         public static string DecryptString(string encryptedText, byte[] key, byte[] iv)
         {
             if (string.IsNullOrEmpty(encryptedText))
@@ -42,13 +27,6 @@
             return Encoding.UTF8.GetString(decryptedBytes);
         }
 
-        /// <summary>
-        /// Encrypts a byte array using AES encryption
-        /// </summary>
-        /// <param name="data">The data to encrypt</param>
-        /// <param name="key">The encryption key (32 bytes for AES-256)</param>
-        /// <param name="iv">The initialization vector (16 bytes)</param>
-        /// <returns>Encrypted byte array</returns>
         public static byte[] EncryptBytes(byte[] data, byte[] key, byte[] iv)
         {
             if (data == null || data.Length == 0)
@@ -78,13 +56,6 @@
             }
         }
 
-        /// <summary>
-        /// Decrypts a byte array using AES encryption
-        /// </summary>
-        /// <param name="encryptedData">The encrypted data</param>
-        /// <param name="key">The encryption key (32 bytes for AES-256)</param>
-        /// <param name="iv">The initialization vector (16 bytes)</param>
-        /// <returns>Decrypted byte array</returns>
         public static byte[] DecryptBytes(byte[] encryptedData, byte[] key, byte[] iv)
         {
             if (encryptedData == null || encryptedData.Length == 0)
