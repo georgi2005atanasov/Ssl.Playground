@@ -40,9 +40,7 @@
 
             // Create installation directory if it doesn't exist
             if (!Directory.Exists(_installationDirectory))
-            {
                 Directory.CreateDirectory(_installationDirectory);
-            }
         }
 
         protected override void OnConnected()

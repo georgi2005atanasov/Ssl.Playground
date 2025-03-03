@@ -33,6 +33,9 @@ namespace SslServer.Services
         {
             string versionsPath = Path.Combine(Directory.GetCurrentDirectory(), DirectoriesConstants.VERSIONS);
 
+            if (!Directory.Exists(versionsPath))
+                Directory.CreateDirectory(versionsPath);
+
             SetupFileSystemWatcher(versionsPath);
             LoadExistingVersion(versionsPath);
         }

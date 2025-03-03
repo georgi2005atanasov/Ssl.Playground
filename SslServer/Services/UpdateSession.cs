@@ -256,7 +256,6 @@
         /// </summary>
         /// <param name="message"></param>
         /// <returns></returns>
-        /// TODO: Make sure the file on the corrupted/older files get deleted
         private async Task HandleFileValidationAsync(BaseMessage message)
         {
             try
