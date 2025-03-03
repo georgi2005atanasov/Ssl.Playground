@@ -1,6 +1,6 @@
 ﻿namespace SslServer.Contracts
 {
-    internal interface ICommandProcessor
+    public interface ICommandProcessor
     {
         Task ProcessCommands();
     }

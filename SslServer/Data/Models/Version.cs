@@ -1,6 +1,6 @@
 ﻿namespace SslServer.Data.Models
 {
-    internal class Version
+    public class Version
     {
     }
 }

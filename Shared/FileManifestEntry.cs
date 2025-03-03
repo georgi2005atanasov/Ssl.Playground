@@ -7,10 +7,10 @@
     {
         public string FileName { get; set; } = string.Empty;
 
-        public string RelativePath { get; set; } = string.Empty;
+        public string FilePath { get; set; } = string.Empty;
 
         public string FileSize { get; set; } = string.Empty;
 
-        public string Sha256Hash { get; set; } = string.Empty;
+        //public string Sha256Hash { get; set; } = string.Empty;
     }
 }

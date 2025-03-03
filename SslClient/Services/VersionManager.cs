@@ -1,6 +1,6 @@
 ﻿namespace SslClient.Services
 {
-    internal class VersionManager
+    public class VersionManager
     {
     }
 }

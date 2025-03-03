@@ -1,12 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace SslClient.Services
+﻿namespace SslClient.Services
 {
-    internal class IVersionManager
+    public class IVersionManager
     {
     }
 }

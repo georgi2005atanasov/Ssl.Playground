@@ -4,21 +4,19 @@
     using Microsoft.Extensions.DependencyInjection;
     using NetCoreServer;
     using SslServer.Contracts;
-    using SslServer.Data;
-    using SslServer.Data.SslServer.Data;
     using SslServer.Models.Internal;
-    using SslServer.Utils;
     using System.Net;
     using System.Net.Sockets;
     using System.Security.Authentication;
     using System.Security.Cryptography.X509Certificates;
 
-    internal class UpdateServer : SslServer
+    public class UpdateServer : SslServer
     {
         private IServiceProvider? _serviceProvider;
         private readonly IServiceCollection _services = new ServiceCollection();
         private readonly ServerConfiguration _serverConfiguration = new();
-        private readonly IDbService _dbService;
+
+        public ServerConfiguration ServerConfiguration => _serverConfiguration;
 
         public UpdateServer(SslContext context, DnsEndPoint endpoint) : base(context, endpoint)
         {

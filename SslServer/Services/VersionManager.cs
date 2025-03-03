@@ -8,7 +8,7 @@
     using SslServer.Contracts;
     using SslServer.Data;
 
-    internal class VersionManager : IVersionManager
+    public class VersionManager : IVersionManager
     {
         private static string _currentVersion = string.Empty;
         private FileCache? _cache = new FileCache();
@@ -29,7 +29,7 @@
 
         public void TrackVersions()
         {
-            string versionsPath = Path.Combine(Directory.GetCurrentDirectory(), "Versions");
+            string versionsPath = Path.Combine(Directory.GetCurrentDirectory(), DirectoriesConstants.VERSIONS);
             Console.WriteLine($"Monitoring folder: {versionsPath}");
 
             SetupFileSystemWatcher(versionsPath);
@@ -102,7 +102,6 @@
 
                 // Save the version in the database
                 await _dbService.SaveVersionAsync(versionName, DateTime.UtcNow);
-                Console.WriteLine($"Version {versionName} saved to database");
 
                 // Process and save all files in the version directory
                 await ProcessVersionFilesAsync(versionPath, versionName);
@@ -153,16 +152,10 @@
                     try
                     {
                         string fileName = Path.GetFileName(filePath);
-                        // Create a relative path from the version directory
                         string relativePath = filePath.Substring(versionPath.Length).TrimStart('\\', '/');
-
-                        // Calculate file hash
                         string sha256 = FileHashUtility.CalculateSha256(filePath);
-
-                        // Get formatted file size
                         string fileSize = FileHashUtility.GetFileSize(filePath);
 
-                        // Create file record
                         var fileRecord = new Data.Models.File
                         {
                             FileName = fileName,
@@ -172,7 +165,6 @@
                             UploadedOn = DateTime.UtcNow
                         };
 
-                        // Save to database
                         await _dbService.SaveFileAsync(fileRecord, versionName);
                         Console.WriteLine($"File {relativePath} saved to database with hash {sha256}");
                     }
@@ -213,10 +205,9 @@
 
                 // Validate the file hash
                 bool isValid = FileHashUtility.ValidateFileHash(fullPath, fileRecord.Sha256);
+
                 if (!isValid)
-                {
                     Console.WriteLine($"Hash validation failed for {filePath}");
-                }
 
                 return isValid;
             }

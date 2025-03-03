@@ -2,7 +2,7 @@
 {
     using SslServer.Services;
 
-    internal static class UpdateServerExtensions
+    public static class UpdateServerExtensions
     {
         public static UpdateServer StartSsl(this UpdateServer server)
         {

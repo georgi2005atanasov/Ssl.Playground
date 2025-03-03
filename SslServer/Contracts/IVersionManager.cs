@@ -1,6 +1,6 @@
 ﻿namespace SslServer.Contracts
 {
-    internal interface IVersionManager : IDisposable
+    public interface IVersionManager : IDisposable
     {
         void SetNotificationCallback(Action<string> callback);
 

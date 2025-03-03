@@ -2,7 +2,7 @@
 {
     using SslServer.Contracts;
 
-    internal class CommandProcessor : ICommandProcessor
+    public class CommandProcessor : ICommandProcessor
     {
         private Func<bool>? _restart;
 

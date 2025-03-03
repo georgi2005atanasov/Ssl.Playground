@@ -2,7 +2,7 @@
 {
     using Shared;
 
-    internal static class ClientHelpers
+    public static class ClientHelpers
     {
         public static CheckVersion GetCurrentVersion()
         {

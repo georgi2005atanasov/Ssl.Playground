@@ -8,25 +8,21 @@
         using Microsoft.Data.SqlClient;
         using global::SslServer.Models.Internal;
 
-        internal class DbService(ServerConfiguration configuration) : IDbService, IDisposable
+        public class DbService(ServerConfiguration configuration) : IDbService, IDisposable
         {
             private readonly string _connectionString = configuration.DbConnection
                     ?? throw new ArgumentNullException("Connection string 'DefaultConnection' not found");
-            private SqlConnection? _connection;
 
-            private async Task<SqlConnection> GetConnectionAsync()
+            private async Task<SqlConnection> CreateAndOpenConnectionAsync()
             {
-                _connection = new SqlConnection(_connectionString);
-
-                if (_connection.State != ConnectionState.Open)
-                    await _connection.OpenAsync();
-
-                return _connection;
+                var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync();
+                return connection;
             }
 
             public async Task<int> ExecuteNonQueryAsync(string commandText, CommandType commandType = CommandType.Text, params DbParameter[] parameters)
             {
-                using var connection = await GetConnectionAsync();
+                using var connection = await CreateAndOpenConnectionAsync();
                 using var command = CreateCommand(connection, commandText, commandType, parameters);
 
                 return await command.ExecuteNonQueryAsync();
@@ -34,7 +30,7 @@
 
             public async Task<T> ExecuteScalarAsync<T>(string commandText, CommandType commandType = CommandType.Text, params DbParameter[] parameters)
             {
-                using var connection = await GetConnectionAsync();
+                using var connection = await CreateAndOpenConnectionAsync();
                 using var command = CreateCommand(connection, commandText, commandType, parameters);
 
                 var result = await command.ExecuteScalarAsync();
@@ -47,17 +43,37 @@
 
             public async Task<IDataReader> ExecuteReaderAsync(string commandText, CommandType commandType = CommandType.Text, params DbParameter[] parameters)
             {
-                var connection = await GetConnectionAsync();
+                var connection = await CreateAndOpenConnectionAsync();
                 var command = CreateCommand(connection, commandText, commandType, parameters);
 
-                return await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                try
+                {
+                    return await command.ExecuteReaderAsync(CommandBehavior.CloseConnection);
+                }
+                catch
+                {
+                    await connection.DisposeAsync();
+                    throw;
+                }
             }
 
             public async Task SaveFileAsync(Models.File file, string versionName)
             {
                 const string sql = @"
-                INSERT INTO Files (FileName, FilePath, Sha256, FileSize, UploadedOn, VersionName)
-                VALUES (@FileName, @FilePath, @Sha256, @FileSize, @UploadedOn, @VersionName)";
+                IF NOT EXISTS (SELECT 1 FROM Files WHERE FilePath = @FilePath AND VersionName = @VersionName)
+                BEGIN
+                    INSERT INTO Files (FileName, FilePath, Sha256, FileSize, UploadedOn, VersionName)
+                    VALUES (@FileName, @FilePath, @Sha256, @FileSize, @UploadedOn, @VersionName)
+                END
+                ELSE
+                BEGIN
+                    UPDATE Files
+                    SET FileName = @FileName,
+                        Sha256 = @Sha256,
+                        FileSize = @FileSize,
+                        UploadedOn = @UploadedOn
+                    WHERE FilePath = @FilePath AND VersionName = @VersionName
+                END";
 
                 var parameters = new DbParameter[]
                 {
@@ -81,13 +97,13 @@
 
                 var parameters = new DbParameter[]
                 {
-                    new DbParameter("@FilePath", filePath),
-                    new DbParameter("@VersionName", versionName)
+                new DbParameter("@FilePath", filePath),
+                new DbParameter("@VersionName", versionName)
                 };
 
-                using var reader = await ExecuteReaderAsync(sql, CommandType.Text, parameters);
+                using var reader = await ExecuteReaderAsync(sql, CommandType.Text, parameters) as SqlDataReader;
 
-                if (reader.Read())
+                if (reader != null && await reader.ReadAsync())
                 {
                     return new Models.File
                     {
@@ -130,36 +146,28 @@
 
                 var parameters = new DbParameter[]
                 {
-                new DbParameter("@VersionName", versionName)
+                    new DbParameter("@VersionName", versionName)
                 };
 
-                using var connection = await GetConnectionAsync();
+                using var connection = await CreateAndOpenConnectionAsync();
                 using var command = CreateCommand(connection, sql, CommandType.Text, parameters);
+                using var reader = await command.ExecuteReaderAsync();
 
-                try
+                var files = new List<Models.File>();
+
+                while (await reader.ReadAsync())
                 {
-                    using var reader = await command.ExecuteReaderAsync();
-
-                    var files = new List<Models.File>();
-
-                    while (await reader.ReadAsync())
+                    files.Add(new Models.File
                     {
-                        files.Add(new Models.File
-                        {
-                            FileName = reader.GetString(0),
-                            FilePath = reader.GetString(1),
-                            Sha256 = reader.GetString(2),
-                            FileSize = reader.GetString(3),
-                            UploadedOn = reader.GetDateTime(4)
-                        });
-                    }
+                        FileName = reader.GetString(0),
+                        FilePath = reader.GetString(1),
+                        Sha256 = reader.GetString(2),
+                        FileSize = reader.GetString(3),
+                        UploadedOn = reader.GetDateTime(4)
+                    });
+                }
 
-                    return files;
-                }
-                finally
-                {
-                    connection.Close();
-                }
+                return files;
             }
 
             private SqlCommand CreateCommand(SqlConnection connection, string commandText, CommandType commandType, DbParameter[] parameters)
@@ -182,8 +190,7 @@
 
             public void Dispose()
             {
-                _connection?.Dispose();
-                _connection = null;
+                GC.SuppressFinalize(this);
             }
         }
     }

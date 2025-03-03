@@ -1,12 +1,13 @@
-﻿namespace SslServer.Utils
+﻿namespace SslServer.Services
 {
     using Shared.Enums;
     using Shared;
     using SslServer.Contracts;
     using SslServer.Data;
     using System.Text.Json;
+    using SslServer.Utils;
 
-    internal class SecureFileTransferService
+    public class SecureFileTransferService : ISecureFileTransferService
     {
         private readonly IVersionManager _versionManager;
         private readonly IDbService _dbService;
@@ -17,7 +18,7 @@
             _dbService = dbService ?? throw new ArgumentNullException(nameof(dbService));
         }
 
-        public async Task<(bool Success, byte[] ResponseData)> HandleFileRequest(string versionName, string filePath)
+        public async Task<(bool Success, string ResponseData)> HandleFileRequest(string versionName, string filePath)
         {
             try
             {
@@ -32,7 +33,7 @@
                 // Get the full path to the file
                 string fullPath = Path.Combine(
                     Directory.GetCurrentDirectory(),
-                    "Versions",
+                    DirectoriesConstants.VERSIONS,
                     versionName,
                     filePath.TrimStart('\\', '/')
                 );
@@ -57,12 +58,12 @@
                 byte[] fileContent = await File.ReadAllBytesAsync(fullPath);
 
                 // Create file transfer message
-                var transferMessage = new FileTransferMessage
+                var transferMessage = new FileTransferServerMessage
                 {
+                    Version = versionName,
                     FileName = fileInfo.FileName,
                     FilePath = fileInfo.FilePath,
                     FileSize = fileInfo.FileSize,
-                    Sha256Hash = fileInfo.Sha256,
                     FileContent = Convert.ToBase64String(fileContent)
                 };
 
@@ -80,7 +81,7 @@
             }
         }
 
-        public async Task<(bool Success, byte[] ResponseData)> ValidateClientFile(string versionName, string filePath, string clientHash)
+        public async Task<(bool Success, string ResponseData)> ValidateClientFile(string versionName, string filePath, string clientHash)
         {
             try
             {
@@ -99,8 +100,9 @@
                 bool isValid = string.Equals(fileInfo.Sha256, clientHash, StringComparison.OrdinalIgnoreCase);
 
                 // Create validation response
-                var validationMessage = new FileValidationMessage
+                var validationMessage = new FileValidationServerMessage
                 {
+                    Version = versionName,
                     FilePath = filePath,
                     IsValid = isValid,
                     ExpectedHash = fileInfo.Sha256,
@@ -109,7 +111,8 @@
 
                 Console.WriteLine($"Hash validation result: {(isValid ? "Valid" : "Invalid")}");
 
-                var response = CreateResponse(MessageType.FileValidation, validationMessage);
+                var response = CreateResponse(MessageType.ValidateFile, validationMessage);
+                // encrypt the bytes with aes
 
                 return (true, response);
             }
@@ -123,7 +126,7 @@
         /// <summary>
         /// Gets a manifest of all files in a version
         /// </summary>
-        public async Task<(bool Success, byte[] ResponseData)> GetFileManifest(string versionName)
+        public async Task<(bool Success, string ResponseData)> GetFileManifest(string versionName)
         {
             try
             {
@@ -156,9 +159,8 @@
                     manifestEntries.Add(new FileManifestEntry
                     {
                         FileName = file.FileName,
-                        RelativePath = file.FilePath,
+                        FilePath = file.FilePath,
                         FileSize = file.FileSize,
-                        Sha256Hash = file.Sha256
                     });
                 }
 
@@ -183,20 +185,20 @@
             }
         }
 
-        private static byte[] CreateResponse<T>(MessageType messageType, T data)
+        private static string CreateResponse<T>(MessageType messageType, T data, bool isEncrypted = false)
         {
             var message = new BaseMessage
             {
                 Type = messageType,
                 TimeStamp = DateTime.UtcNow,
-                Data = JsonSerializer.Serialize(data, JsonHelpers.JsonFormatter)
+                Data = JsonSerializer.Serialize(data)
             };
 
             string messageJson = JsonSerializer.Serialize(message, JsonHelpers.JsonFormatter);
-            return System.Text.Encoding.UTF8.GetBytes(messageJson);
+            return messageJson;
         }
 
-        private static byte[] CreateErrorResponse(MessageType messageType, string errorMessage)
+        private static string CreateErrorResponse(MessageType messageType, string errorMessage)
         {
             var errorData = new ErrorMessage { Message = errorMessage };
             return CreateResponse(messageType, errorData);

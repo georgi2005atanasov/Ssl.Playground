@@ -8,7 +8,6 @@
     using SslServer.Extensions;
     using SslServer.Models.Internal;
     using SslServer.Services;
-    using SslServer.Utils;
 
     class Program
     {

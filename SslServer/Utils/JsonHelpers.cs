@@ -2,12 +2,13 @@
 {
     using System.Text.Json;
 
-    internal static class JsonHelpers
+    public static class JsonHelpers
     {
-        internal static readonly JsonSerializerOptions JsonFormatter = new JsonSerializerOptions
+        public static readonly JsonSerializerOptions JsonFormatter = new JsonSerializerOptions
         {
             WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true
         };
 
         //internal static readonly JsonSerializerOptions JsonSerializerOptions = new JsonSerializerOptions

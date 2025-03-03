@@ -1,7 +1,9 @@
 ﻿namespace SslClient.Models.Internal
 {
-    internal class Secrets
+    public class Secrets
     {
-        public string DownloadValidationKey { get; set; } = string.Empty;
+        public string EncryptionKey { get; set; } = string.Empty;
+
+        public string EncryptionIV { get; set; } = string.Empty;
     }
 }

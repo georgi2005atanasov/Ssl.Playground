@@ -1,5 +1,6 @@
 ﻿namespace SslServer.Data
 {
+    using Microsoft.Data.SqlClient;
     using System.Data;
     using System.Threading.Tasks;
 
