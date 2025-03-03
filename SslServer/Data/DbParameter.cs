@@ -1,8 +1,5 @@
 ﻿namespace SslServer.Data
 {
-    /// <summary>
-    /// Represents a database parameter
-    /// </summary>
     public class DbParameter
     {
         public string Name { get; set; } = string.Empty;

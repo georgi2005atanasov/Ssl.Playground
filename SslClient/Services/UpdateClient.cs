@@ -38,7 +38,6 @@
             _encryptionKey = encryptionKey;
             _encryptionIV = encryptionIV;
 
-            // Create installation directory if it doesn't exist
             if (!Directory.Exists(_installationDirectory))
                 Directory.CreateDirectory(_installationDirectory);
         }
